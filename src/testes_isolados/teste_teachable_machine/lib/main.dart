@@ -1,122 +1,299 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:camera/camera.dart';
+import 'package:tflite_v2/tflite_v2.dart';
 
-void main() {
-  runApp(const MyApp());
+List<CameraDescription>? cameras;
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  cameras = await availableCameras();
+  runApp(
+    const MaterialApp(home: CameraScreen(), debugShowCheckedModeBanner: false),
+  );
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+// ==========================================
+// TELA 1: CÂMERA
+// ==========================================
+class CameraScreen extends StatefulWidget {
+  const CameraScreen({super.key});
 
-  // This widget is the root of your application.
+  @override
+  State<CameraScreen> createState() => _CameraScreenState();
+}
+
+class _CameraScreenState extends State<CameraScreen> {
+  CameraController? _cameraController;
+  bool _isTakingPicture = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadModel();
+    _initCamera();
+  }
+
+  // Carrega o modelo apenas uma vez ao abrir o app
+  Future<void> _loadModel() async {
+    await Tflite.loadModel(
+      model: "assets/model_unquant.tflite",
+      labels: "assets/labels.txt",
+    );
+  }
+
+  void _initCamera() {
+    if (cameras == null || cameras!.isEmpty) return;
+
+    _cameraController = CameraController(
+      cameras![0],
+      ResolutionPreset.high,
+      enableAudio: false,
+    );
+
+    _cameraController!.initialize().then((_) {
+      if (!mounted) return;
+      setState(() {});
+    });
+  }
+
+  Future<void> _captureAndNavigate() async {
+    if (_isTakingPicture ||
+        _cameraController == null ||
+        !_cameraController!.value.isInitialized)
+      return;
+
+    setState(() {
+      _isTakingPicture = true;
+    });
+
+    try {
+      // Tira a foto
+      final XFile picture = await _cameraController!.takePicture();
+
+      if (mounted) {
+        // Navega para a tela de resultados, passando o caminho da imagem
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ResultScreen(imagePath: picture.path),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Erro ao capturar foto: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isTakingPicture = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _cameraController?.dispose();
+    Tflite.close(); // Fecha o modelo ao fechar o app
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+    return Scaffold(
+      backgroundColor: Colors.black, // Fundo preto para as bordas da câmera
+      appBar: AppBar(
+        title: const Text('Escanear Objeto'),
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      body: Center(
+        child:
+            _cameraController != null && _cameraController!.value.isInitialized
+            // AspectRatio garante que a proporção original do sensor não distorça
+            ? AspectRatio(
+                aspectRatio: 1 / _cameraController!.value.aspectRatio,
+                child: CameraPreview(_cameraController!),
+              )
+            : const CircularProgressIndicator(),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _isTakingPicture ? null : _captureAndNavigate,
+        icon: _isTakingPicture
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+            : const Icon(Icons.camera_alt),
+        label: Text(_isTakingPicture ? 'Capturando...' : 'Escanear'),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+// ==========================================
+// TELA 2: RESULTADO
+// ==========================================
+class ResultScreen extends StatefulWidget {
+  final String imagePath;
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+  const ResultScreen({super.key, required this.imagePath});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<ResultScreen> createState() => _ResultScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _ResultScreenState extends State<ResultScreen> {
+  List<dynamic>? _recognitions;
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  @override
+  void initState() {
+    super.initState();
+    _classifyImage(); // Inicia a classificação assim que a tela abre
+  }
+
+  Future<void> _classifyImage() async {
+    try {
+      var recognitions = await Tflite.runModelOnImage(
+        path: widget.imagePath,
+        imageMean: 127.5,
+        imageStd: 127.5,
+        numResults: 3,
+        threshold: 0.0,
+      );
+
+      if (mounted) {
+        setState(() {
+          _recognitions = recognitions;
+        });
+      }
+    } catch (e) {
+      debugPrint("Erro na classificação: $e");
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+        title: const Text('Resultado da Análise'),
+        // Botão padrão de voltar no canto esquerdo
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+      body: Column(
+        children: [
+          // Área da Imagem Congelada
+          Expanded(
+            flex: 4,
+            child: Container(
+              width: double.infinity,
+              color: Colors.black,
+              // BoxFit.contain exibe a imagem inteira mantendo a proporção real
+              child: Image.file(File(widget.imagePath), fit: BoxFit.contain),
+            ),
+          ),
+
+          // Área do Ranking
+          Expanded(
+            flex: 5,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              width: double.infinity,
+              color: Colors.white,
+              child: _recognitions == null
+                  ? const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text(
+                            "Processando imagem...",
+                            style: TextStyle(fontSize: 16),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Column(
+                      children: [
+                        const Text(
+                          "Ranking de Classes",
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Expanded(
+                          child: ListView.builder(
+                            itemCount: _recognitions!.length,
+                            itemBuilder: (context, index) {
+                              var result = _recognitions![index];
+                              String label = result['label'];
+                              double confidence = result['confidence'];
+
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          label,
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Text(
+                                          "${(confidence * 100).toStringAsFixed(1)}%",
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    LinearProgressIndicator(
+                                      value: confidence,
+                                      minHeight: 12,
+                                      backgroundColor: Colors.grey[300],
+                                      color: confidence > 0.5
+                                          ? Colors.green
+                                          : Colors.blue,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ],
       ),
+      // Botão para Novo Scan
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => Navigator.pop(context),
+        icon: const Icon(Icons.refresh),
+        label: const Text('Novo Scan'),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }

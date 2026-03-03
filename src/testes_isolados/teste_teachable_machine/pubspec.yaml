@@ -30,6 +30,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  image_picker: ^1.0.7  # Para pegar a imagem da galeria/câmera
+  tflite_v2: ^1.0.0     # Fork atualizado para rodar o modelo de forma simples
+  camera: ^0.10.5
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -56,6 +59,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  assets:
+    - assets/model_unquant.tflite
+    - assets/labels.txt
 
   # To add assets to your application, add an assets section, like this:
   # assets:
