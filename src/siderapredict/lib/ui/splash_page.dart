@@ -13,7 +13,7 @@ class SplashPage extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFFD0021B),
+              Color(0xFFDE1212),
               Color(0xFFFFFFFF),
             ],
             stops: [0.3, 0.8],
