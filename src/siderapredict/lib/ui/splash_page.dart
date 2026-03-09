@@ -1,7 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:siderapredict/ui/dashboard_relatorios.dart';
 
-class SplashPage extends StatelessWidget {
+class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
+
+  @override
+  State<SplashPage> createState() => _SplashPageState();
+}
+
+class _SplashPageState extends State<SplashPage> {
+  @override
+  void initState() {
+    super.initState();
+    _navigateToScanner();
+  }
+
+  Future<void> _navigateToScanner() async {
+    await Future.delayed(const Duration(milliseconds: 1500));
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => const DashboardRelatoriosPage()),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

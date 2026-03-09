@@ -158,14 +158,12 @@ class _ScannerPageState extends State<ScannerPage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Botão de flash
                   FloatingActionButton(
                     heroTag: 'flash',
                     backgroundColor: Colors.white,
                     onPressed: _toggleFlash,
                     child: Icon(_getFlashIcon(), color: Colors.red),
                   ),
-                  // Botão escanear peça
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -192,7 +190,6 @@ class _ScannerPageState extends State<ScannerPage> {
                       ),
                     ),
                   ),
-                  // Removido botão de virar câmera
                 ],
               ),
             ),
